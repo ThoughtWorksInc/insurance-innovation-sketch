@@ -1,0 +1,18 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[dev-packages]
+aws-sam-cli = "*"
+pytest = "*"
+requests = "*"
+boto3 = "*"
+pylint = "*"
+
+[packages]
+aws-xray-sdk = "*"
+pymysql = "*"
+
+[requires]
+python_version = "3.6"

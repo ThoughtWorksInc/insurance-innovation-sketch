@@ -1,0 +1,172 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Provisions resourcs for the core API
+Transform: 'AWS::Serverless-2016-10-31'
+Parameters:
+  AppName:
+    Description: "Application Name"
+    Type: String
+    Default: core-api
+  EnvType:
+    Description: "Environment type (eg, dev, qa, prod)"
+    Type: String
+    Default: dev
+  DatabaseStackName:
+    Description: "Name of the RDS CloudFormation stack to import parameters from"
+    Type: String
+    Default: core_api_db
+  ApiStageName:
+    Description: "API Stage Name"
+    Type: String
+    Default: dev
+  LambdaLogLevel:
+    Description: "Log verbosity level for Lambda functions"
+    Type: String
+    Default: info
+  LambdaLogLevel:
+    Description: "Sample API key to be provided (non-production case)"
+    Type: String
+    Default: info
+Globals:
+  Function:
+    Runtime: python3.6
+    Timeout: 120
+    MemorySize: 256
+    AutoPublishAlias: live
+    Environment:
+      Variables:
+        LOG_LEVEL: !Ref LambdaLogLevel
+        DB_NAME:
+          Fn::ImportValue:
+            !Sub "${DatabaseStackName}-DatabaseName"
+        DB_CLUSTER_ARN:
+          Fn::ImportValue:
+              !Sub "${DatabaseStackName}-DatabaseClusterArn"
+        DB_CRED_SECRETS_STORE_ARN:
+          Fn::ImportValue:
+              !Sub "${DatabaseStackName}-DatabaseSecretArn"
+  Api:
+    Name: !Sub "${EnvType}-${AppName}-api"
+    EndpointConfiguration: REGIONAL
+Conditions:
+  ISDevelopment:
+    !Equals [!Ref EnvType, dev]
+Resources:
+  CoreAPI:
+    Condition: ISDevelopment
+    Type: 'AWS::Serverless::Api'
+    Properties:
+        StageName: !Sub "${ApiStageName}"
+        TracingEnabled: True
+        Auth:
+          ApiKeyRequired: true
+  ApiKey:
+    Condition: ISDevelopment
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: !Sub "${EnvType}_${AppName}_apikey"
+      Description: "CloudFormation API Key"
+      Enabled: true
+      GenerateDistinctId: false
+      Value: 9WRVZxVfa5fQzJJgitHh
+      StageKeys:
+        - RestApiId: !Ref CoreAPI
+          StageName: !Sub "${ApiStageName}"
+  ApiUsagePlan:
+    Condition: ISDevelopment
+    Type: "AWS::ApiGateway::UsagePlan"
+    Properties:
+      ApiStages: 
+        - ApiId: !Ref CoreAPI
+          Stage: !Sub "${ApiStageName}"
+      UsagePlanName: !Sub "${EnvType}-${AppName}-usage-plan"
+  ApiUsagePlanKey:
+    Condition: ISDevelopment
+    Type: "AWS::ApiGateway::UsagePlanKey"
+    DependsOn: 
+      - CoreAPI
+    Properties:
+      KeyId: !Ref ApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref ApiUsagePlan
+  AddCustomerLambda:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Description: Adds a customer
+      FunctionName: !Sub "${EnvType}-${AppName}-add-customer"
+      CodeUri: ../lambdas/
+      Handler: add_customer.handler
+      Tracing: Active
+      Events:
+        EC2PostEvent:
+          Type: Api
+          Properties:
+            Path: '/customer'
+            Method: post
+            RestApiId: !Ref CoreAPI
+      Policies:
+        - Version: '2012-10-17' # Policy Document
+          Statement:
+            - Effect: Allow
+              Action:
+                - rds-data:*
+              Resource:
+                Fn::ImportValue:
+                  !Sub "${DatabaseStackName}-DatabaseClusterArn"
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource:
+                Fn::ImportValue:
+                  !Sub "${DatabaseStackName}-DatabaseSecretArn"
+            - Effect: Allow
+              Action:
+                - xray:PutTraceSegments
+                - xray:PutTelemetryRecords
+              Resource: "*"
+  GetCustomersLambda:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Description: Lists customers
+      FunctionName: !Sub "${EnvType}-${AppName}-get-customers"
+      CodeUri: ../lambdas/
+      Handler: get_customers.handler
+      Tracing: Active
+      Events:
+        EC2GetEvent:
+          Type: Api
+          Properties:
+            Path: '/customer'
+            Method: get
+            RestApiId: !Ref CoreAPI
+      Policies:
+        - Version: '2012-10-17' # Policy Document
+          Statement:
+            - Effect: Allow
+              Action:
+                - rds-data:*
+              Resource:
+                Fn::ImportValue:
+                  !Sub "${DatabaseStackName}-DatabaseClusterArn"
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource:
+                Fn::ImportValue:
+                  !Sub "${DatabaseStackName}-DatabaseSecretArn"
+            - Effect: Allow
+              Action:
+                - xray:PutTraceSegments
+                - xray:PutTelemetryRecords
+              Resource: "*"
+Outputs:
+  StackName:
+    Description: API Stack Name
+    Value: !Ref AWS::StackName
+    Export:
+      Name: !Sub ${AWS::StackName}-StackName
+
+  ApiEndpoint:
+    Description: API Stage Endpoint
+    Value: !Sub "https://${CoreAPI}.execute-api.${AWS::Region}.amazonaws.com/${EnvType}"
+    Export:
+      Name: !Sub ${AWS::StackName}-ApiEndPoint

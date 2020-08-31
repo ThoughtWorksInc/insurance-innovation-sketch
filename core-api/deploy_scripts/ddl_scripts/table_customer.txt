@@ -1,0 +1,13 @@
+
+CREATE TABLE IF NOT EXISTS customer (
+	customer_id int NOT NULL AUTO_INCREMENT,
+	first_name VARCHAR (255) NOT NULL,
+	last_name VARCHAR (255) NOT NULL,
+	phone VARCHAR (25),
+	email VARCHAR (255) NOT NULL,
+	street_1 VARCHAR (255),
+	street_2 VARCHAR (255),
+	zip_code VARCHAR (5),
+	products JSON,
+	PRIMARY KEY (`customer_id`)
+);
